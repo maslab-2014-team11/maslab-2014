@@ -12,7 +12,7 @@ public class MapleComm {
 	private MapleIO mapleIO;
 	private List<MapleDevice> deviceList = new ArrayList<MapleDevice>();
 	private int consumeSize = 0;
-	
+
 	public MapleComm(MapleIO.SerialPortType portType) {
 		mapleIO = new MapleIO();
 		mapleIO.connect(portType);
@@ -29,12 +29,12 @@ public class MapleComm {
 	 * Send the list of devices and corresponding pins to the Maple.
 	 */
 	public void initialize() {
-		
+
 		if (!verify()) {
 			System.err.println("MapleComm initialization failed");
 			return;
 		}
-		
+
 		// Construct the initialization message
 		ByteArrayOutputStream data = new ByteArrayOutputStream();
 		data.write((byte) deviceList.size());
@@ -43,7 +43,8 @@ public class MapleComm {
 			try {
 				data.write(device.getDeviceCode());
 				data.write(device.getInitializationBytes());
-			} catch (IOException e) { }
+			} catch (IOException e) {
+			}
 		}
 		mapleIO.setExpectedInboundMessageSize(consumeSize);
 
@@ -65,7 +66,8 @@ public class MapleComm {
 				data.write(counter);
 				try {
 					data.write(command);
-				} catch (IOException e) { }
+				} catch (IOException e) {
+				}
 			}
 			counter++;
 		}
@@ -73,17 +75,24 @@ public class MapleComm {
 		// Transmit the combined commands
 		mapleIO.sendCommand(data);
 	}
-	
+
 	/*
 	 * Wait for, and process, up-to-date sensor data from the Maple
 	 */
 	public void updateSensorData() {
 		mapleIO.sendSensorDataRequest();
 		try {
+
 			Thread.sleep(1);
-		} catch (InterruptedException e) { }
-		ByteBuffer buff = ByteBuffer.wrap(mapleIO.getMostRecentMessage());
-		
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		byte[] message = mapleIO.getMostRecentMessage(100);
+		if (message == null) {
+			return;
+		}
+		ByteBuffer buff = ByteBuffer.wrap(message);
+
 		// Give the byte buffer to each device and let it take what it needs
 		for (MapleDevice device : deviceList) {
 			device.consumeMessageFromMaple(buff);

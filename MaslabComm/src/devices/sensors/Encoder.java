@@ -75,4 +75,7 @@ public class Encoder extends Sensor {
 		return (double) (1000000000.0 * getDeltaAngularDistance() / deltaTime);
 	}
 
+	public int getTotalTicks() {
+		return ticks;
+	}
 }

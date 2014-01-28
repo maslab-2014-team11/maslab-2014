@@ -4,29 +4,30 @@ import java.io.ByteArrayOutputStream;
 
 import jssc.SerialPort;
 import jssc.SerialPortException;
+import jssc.SerialPortTimeoutException;
 
 public class MapleIO {
-	
+
 	public static final byte INIT_SIGNAL = (byte) 'I';
 	public static final byte SET_SIGNAL = (byte) 'S';
 	public static final byte GET_SIGNAL = (byte) 'G';
 	public static final byte RESPONSE_SIGNAL = (byte) 'R';
 	public static final byte END_SIGNAL = (byte) 0xff;
-	
+
 	public enum SerialPortType {
 		LINUX, SIMULATION, WINDOWS
 	}
-	
+
 	private SerialPort serialPort;
 	private int expectedInboundMessageSize;
-	
+
 	/*
 	 * Connects to your device based on the input mode proposed during object
 	 * construction.
 	 */
 	public void connect(SerialPortType portType) {
 		String port = "";
-		
+
 		// Windows: auto-connect to COM port
 		if (portType == SerialPortType.WINDOWS) {
 			port = "COM";
@@ -43,12 +44,12 @@ public class MapleIO {
 			serialPort = new SimulatedPort();
 			return;
 		}
-		
+
 		connect(port);
 	}
-	
+
 	void connect(String port) {
-		
+
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			public void run() {
 				try {
@@ -56,7 +57,7 @@ public class MapleIO {
 				} catch (Throwable e) {
 					e.printStackTrace();
 				}
-		    }
+			}
 		});
 
 		// Auto-connect to port of given type "port"
@@ -71,7 +72,9 @@ public class MapleIO {
 			}
 		}
 		if (i == 20) {
-			System.err.println("Failed to auto-connect to serial port of type \"" + port + "\"");
+			System.err
+					.println("Failed to auto-connect to serial port of type \""
+							+ port + "\"");
 			finalize();
 			System.exit(0);
 		}
@@ -92,71 +95,82 @@ public class MapleIO {
 			System.err.println(ex);
 		}
 	}
-	
+
 	public void setExpectedInboundMessageSize(int dataSize) {
 		expectedInboundMessageSize = dataSize + 2;
 	}
-	
+
 	public void sendInitMessage(ByteArrayOutputStream message) {
 		try {
-			// we have observed strange behavior when several calls to writeBytes()
+			// we have observed strange behavior when several calls to
+			// writeBytes()
 			// are made in immediate succession, so we pack the entire message
 			// into a single call.
-			byte[] packet = buildPacket(INIT_SIGNAL, message.toByteArray(), END_SIGNAL);
-			//System.out.println("INI: " + Arrays.toString(packet));
+			byte[] packet = buildPacket(INIT_SIGNAL, message.toByteArray(),
+					END_SIGNAL);
+			// System.out.println("INI: " + Arrays.toString(packet));
 			serialPort.writeBytes(packet);
 		} catch (SerialPortException e) {
 			System.err.println("Init message failed to send. [" + e + "]");
 		}
 	}
-	
+
 	public void sendCommand(ByteArrayOutputStream message) {
 		try {
 			// see comment in sendInitMessage()
-			byte[] packet = buildPacket(SET_SIGNAL, message.toByteArray(), END_SIGNAL);
-			//System.out.println("SET: " + Arrays.toString(packet));
+			byte[] packet = buildPacket(SET_SIGNAL, message.toByteArray(),
+					END_SIGNAL);
+			// System.out.println("SET: " + Arrays.toString(packet));
 			serialPort.writeBytes(packet);
 		} catch (SerialPortException e) {
 			System.err.println("Command message failed to send. [" + e + "]");
 		}
 	}
-	
+
 	public void sendSensorDataRequest() {
 		try {
 			// see comment in sendInitMessage()
-			byte[] packet = new byte[] {GET_SIGNAL};
-			//System.out.println("GET: " + Arrays.toString(packet));
+			byte[] packet = new byte[] { GET_SIGNAL };
+			// System.out.println("GET: " + Arrays.toString(packet));
 			serialPort.writeBytes(packet);
 		} catch (SerialPortException e) {
-			System.err.println("Sensor data request failed to send. [" + e + "]");
+			System.err.println("Sensor data request failed to send. [" + e
+					+ "]");
 		}
 	}
-	
-	public byte[] getMostRecentMessage() {
+
+	public byte[] getMostRecentMessage(int timeout) {
+		long now = System.currentTimeMillis();
 		while (true) {
+			if (System.currentTimeMillis() > now + timeout)
+				return null;
 			
 			byte[] data;
-			
+
 			try {
 				byte firstByte = (byte) 0;
 				while (firstByte != RESPONSE_SIGNAL) {
 					firstByte = serialPort.readBytes(1)[0];
 				}
-				data = serialPort.readBytes(expectedInboundMessageSize - 2);
+				data = serialPort.readBytes(expectedInboundMessageSize - 2, timeout);
 				byte lastByte = serialPort.readBytes(1)[0];
 				if (lastByte != END_SIGNAL) {
-					System.err.println("Received packet not terminated with END symbol");
+					System.err
+							.println("Received packet not terminated with END symbol");
 					System.exit(1);
 				}
 			} catch (SerialPortException e) {
 				System.err.println(e);
 				continue;
+			} catch (SerialPortTimeoutException e) {
+				e.printStackTrace();
+				return null;
 			}
-			
+
 			return data;
 		}
 	}
-	
+
 	private static byte[] buildPacket(byte first, byte[] message, byte last) {
 		int len = message.length;
 		byte[] packet = new byte[len + 2];
